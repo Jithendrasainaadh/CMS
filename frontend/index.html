@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gated Community Management System</title>
+    <meta name="description" content="Manage your gated community seamlessly through this premium portal.">
+    <!-- Google Fonts: Inter -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="css/styles.css">
+    <script>
+        const savedTheme = localStorage.getItem('gcms_theme') || 'dark';
+        if (savedTheme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    </script>
+</head>
+<body>
+    <!-- Login Overlay -->
+    <div id="login-overlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-color); z-index: 9999; display: flex; align-items: center; justify-content: center;">
+        <div class="card fade-in" style="width: 100%; max-width: 400px; text-align: center;">
+            <div class="logo" style="justify-content: center; margin-bottom: 24px;">
+                <i class="ph-fill ph-buildings"></i>
+                <span>Oasis Heights</span>
+            </div>
+            <h2 style="color: white; margin-bottom: 8px;" data-i18n="welcome">Welcome Back</h2>
+            <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 24px;">Sign in to your community portal</p>
+            
+            <form id="login-form" style="display: flex; flex-direction: column; gap: 16px;">
+                <select id="login-community" style="width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; color: white; font-family: inherit;">
+                    <option value="">Platform Admin (No Community)</option>
+                </select>
+                <input type="email" id="login-email" placeholder="Email Address" required style="width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; color: white; font-family: inherit;">
+                <input type="password" id="login-password" placeholder="Password" required style="width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; color: white; font-family: inherit;">
+                <button type="submit" class="btn" style="width: 100%; justify-content: center; margin-top: 8px;">Sign In</button>
+            </form>
+            <p id="login-error" style="color: var(--danger-color); font-size: 12px; margin-top: 12px; display: none;">Invalid credentials</p>
+        </div>
+    </div>
+
+    <div class="app-shell" style="display: none;" id="main-app">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="ph-fill ph-buildings"></i>
+                <span>Oasis Heights</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#dashboard" class="nav-item active"><i class="ph ph-squares-four"></i> <span data-i18n="nav_dashboard">Dashboard</span></a>
+                <a href="#voting" class="nav-item"><i class="ph ph-check-square-offset"></i> <span data-i18n="nav_voting">Voting</span></a>
+                <a href="#messaging" class="nav-item"><i class="ph ph-chat-circle-text"></i> <span data-i18n="nav_messaging">Messaging</span></a>
+                <a href="#polls" class="nav-item"><i class="ph ph-chart-bar"></i> <span data-i18n="nav_polls">Polls</span></a>
+                <a href="#reviews" class="nav-item"><i class="ph ph-star"></i> <span data-i18n="nav_reviews">Reviews</span></a>
+                <a href="#gallery" class="nav-item"><i class="ph ph-images"></i> <span data-i18n="nav_gallery">Gallery</span></a>
+                <a href="#properties" class="nav-item"><i class="ph ph-house"></i> <span data-i18n="nav_properties">Properties</span></a>
+                <a href="#settings" class="nav-item" style="margin-top: 24px;"><i class="ph ph-gear"></i> <span data-i18n="nav_settings">Account Settings</span></a>
+            </nav>
+        </aside>
+        
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header class="top-header">
+                <div class="search-bar">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input type="text" placeholder="Search community...">
+                </div>
+                <div class="user-actions">
+                    <button class="icon-btn" id="bell-btn"><i class="ph ph-bell"></i><span class="badge" id="notif-badge" style="display:none;">0</span></button>
+                    <div class="user-profile">
+                        <img src="https://i.pravatar.cc/150?img=68" alt="Profile">
+                        <div class="user-info">
+                            <span class="user-name">Alex Johnson</span>
+                            <span class="user-role">Resident - B104</span>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            
+            <!-- Dynamic Router View -->
+            <div id="page-content" class="page-container">
+            </div>
+        </main>
+    </div>
+    
+    <script src="js/crypto_helper.js?v=6"></script>
+    <script src="js/api.js?v=6"></script>
+    <script src="js/i18n.js?v=6"></script>
+    <script src="js/app.js?v=6"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(registration => {
+              console.log('ServiceWorker registration successful with scope: ', registration.scope);
+            })
+            .catch(err => {
+              console.log('ServiceWorker registration failed: ', err);
+            });
+        });
+      }
+    </script>
+</body>
+</html>

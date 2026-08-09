@@ -1,0 +1,8 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}\\venv\\Scripts\\python.exe",
+  "python.locator": "js",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}\\venv\\Lib\\site-packages"
+  ],
+  "liveServer.settings.port": 5501
+}
