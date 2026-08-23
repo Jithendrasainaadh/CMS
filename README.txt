@@ -1,11 +1,11 @@
 ================================================================================
-         OASIS HEIGHTS — GATED COMMUNITY MANAGEMENT SYSTEM (GCMS)
+                AJS — GATED COMMUNITY MANAGEMENT SYSTEM (GCMS)
                       Complete Project Documentation
 ================================================================================
 
 PRODUCT OVERVIEW
 ----------------
-Oasis Heights GCMS is a full-stack, self-hosted web application designed to
+AJS GCMS is a full-stack, self-hosted web application designed to
 manage a gated residential community. It provides a premium dark-themed portal
 for residents and administrators, accessible from any modern web browser with
 no app installation required.
@@ -117,7 +117,7 @@ USER ROLES EXPLAINED
 
   SUPER ADMIN
     - Logs in and sees a platform dashboard
-    - Can create multiple communities (e.g. "Oasis Heights", "Sunrise Villas")
+    - Can create multiple communities (e.g. "AJS", "Sunrise Villas")
     - Does NOT participate in community messaging or polls
     - Manages the platform at the highest level
 
@@ -245,8 +245,8 @@ CUSTOMISATION FOR A NEW CLIENT
 ================================================================================
 
   BRANDING (Community Name)
-    Change "Oasis Heights" to the client's community name in:
-    - frontend/index.html  (lines with "Oasis Heights" in <span> tags)
+    Change "AJS" to the client's community name in:
+    - frontend/index.html  (lines with "AJS" in <span> tags)
 
   LOGO / FAVICON
     - Replace the Phosphor "buildings" icon with a custom <img> tag.

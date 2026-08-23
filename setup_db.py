@@ -30,15 +30,15 @@ def setup_test_data():
     headers = {"Authorization": f"Bearer {token}"}
 
     # 3. Create a Community
-    print("\n[+] Creating 'Oasis Heights' Community...")
+    print("\n[+] Creating 'AJS' Community...")
     comm_res = requests.post(f"{BASE_URL}/communities/", json={
-        "name": "Oasis Heights",
+        "name": "AJS",
         "address": "123 Palm Tree Lane"
     }, headers=headers)
     community_id = comm_res.json()["id"]
     print(f"Community created with ID: {community_id}")
 
-    # 4. Add a Resident to Oasis Heights
+    # 4. Add a Resident to AJS
     print("\n[+] Adding a Resident User...")
     user_res = requests.post(f"{BASE_URL}/users/?community_id={community_id}", json={
         "email": "resident@example.com",
