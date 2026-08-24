@@ -193,6 +193,7 @@ const App = {
                 case 'voting':      this.pages.voting(area);            break;
                 case 'reviews':     this.pages.reviews(area);           break;
                 case 'gallery':     this.pages.gallery(area);           break;
+                case 'maintenance': await this.pages.maintenance(area); break;
                 case 'settings':    this.renderSettings();              break;
                 default: area.innerHTML = `<div class="fade-in"><h1 class="h1">404 — Not Found</h1></div>`;
             }
@@ -739,6 +740,353 @@ const App = {
                 showToast('Image deleted', 'success');
                 App.pages.loadGallery();
             } catch (err) { showToast(err.message, 'error'); }
+        },
+
+        // ── Page: Maintenance Bills ───────────────────────────
+        async maintenance(container) {
+            const isAdmin  = App.user?.role === 'admin' && !App.user?.is_superadmin;
+            const isSA     = App.user?.is_superadmin;
+
+            if (isSA) {
+                container.innerHTML = `<div style="padding:60px;text-align:center;color:var(--text-secondary);"><i class="ph ph-lock-key" style="font-size:48px;display:block;margin-bottom:12px;"></i><p>Super Admins do not manage community maintenance bills.</p></div>`;
+                return;
+            }
+
+            container.innerHTML = `<div class="fade-in">
+                <div class="page-header">
+                    <div><h1 class="h1">Maintenance Bills</h1><p style="color:var(--text-secondary);">${isAdmin ? 'Manage monthly maintenance bills for your community.' : 'Your maintenance bill statements.'}</p></div>
+                    ${isAdmin ? `<button class="btn" onclick="App.pages.showCreateBillForm()"><i class="ph ph-plus"></i> Create Bill</button>` : ''}
+                </div>
+                <div id="bill-create-form"></div>
+                <div id="bills-content"><p style="color:var(--text-secondary);">Loading…</p></div>
+            </div>`;
+
+            await App.pages.loadBills(isAdmin);
+        },
+
+        async loadBills(isAdmin) {
+            const el = document.getElementById('bills-content');
+            if (!el) return;
+            try {
+                const bills = isAdmin
+                    ? await ApiClient.getMaintenanceBills()
+                    : await ApiClient.getMyBills();
+                App.pages.renderBills(bills, isAdmin);
+            } catch (err) {
+                el.innerHTML = `<div style="color:var(--danger-color);padding:20px;">Error: ${err.message}</div>`;
+            }
+        },
+
+        renderBills(bills, isAdmin) {
+            const el = document.getElementById('bills-content');
+            if (!el) return;
+
+            if (!bills.length) {
+                el.innerHTML = `<div class="card" style="text-align:center;padding:60px;">
+                    <i class="ph ph-receipt" style="font-size:48px;color:var(--text-secondary);display:block;margin-bottom:14px;"></i>
+                    <p style="color:var(--text-secondary);">${isAdmin ? 'No bills raised yet. Click "Create Bill" to get started.' : 'No maintenance bills for your account.'}</p>
+                </div>`;
+                return;
+            }
+
+            const now = new Date();
+
+            const statusBadge = (bill) => {
+                if (bill.is_paid) return `<span style="background:rgba(46,160,67,0.15);color:var(--success-color);padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">✓ PAID</span>`;
+                const due = new Date(bill.due_date);
+                const overdue = due < now;
+                return `<span style="background:${overdue ? 'rgba(248,81,73,0.15)' : 'rgba(248,160,73,0.15)'};color:${overdue ? 'var(--danger-color)' : 'var(--warning-color)'};padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${overdue ? '⚠ OVERDUE' : '⏳ DUE'}</span>`;
+            };
+
+            const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
+            const fmtAmt  = (a) => `₹${parseFloat(a).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            if (isAdmin) {
+                // Admin: table layout
+                el.innerHTML = `
+                <div class="card" style="overflow:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--border-color);">
+                                <th style="text-align:left;padding:10px 12px;color:var(--text-secondary);font-weight:600;font-size:11px;letter-spacing:0.5px;">RESIDENT</th>
+                                <th style="text-align:left;padding:10px 12px;color:var(--text-secondary);font-weight:600;font-size:11px;letter-spacing:0.5px;">PERIOD</th>
+                                <th style="text-align:left;padding:10px 12px;color:var(--text-secondary);font-weight:600;font-size:11px;letter-spacing:0.5px;">DESCRIPTION</th>
+                                <th style="text-align:right;padding:10px 12px;color:var(--text-secondary);font-weight:600;font-size:11px;letter-spacing:0.5px;">AMOUNT</th>
+                                <th style="text-align:left;padding:10px 12px;color:var(--text-secondary);font-weight:600;font-size:11px;letter-spacing:0.5px;">DUE DATE</th>
+                                <th style="text-align:left;padding:10px 12px;color:var(--text-secondary);font-weight:600;font-size:11px;letter-spacing:0.5px;">STATUS</th>
+                                <th style="text-align:left;padding:10px 12px;color:var(--text-secondary);font-weight:600;font-size:11px;letter-spacing:0.5px;">ACTIONS</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${bills.map(b => `
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="bill-row-${b.id}">
+                                <td style="padding:12px;color:white;font-weight:500;">${b.resident_name}</td>
+                                <td style="padding:12px;color:var(--text-secondary);">${b.billing_period}</td>
+                                <td style="padding:12px;color:var(--text-secondary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${b.description || '—'}</td>
+                                <td style="padding:12px;color:var(--primary-color);font-weight:700;text-align:right;">${fmtAmt(b.amount)}</td>
+                                <td style="padding:12px;color:var(--text-secondary);">${fmtDate(b.due_date)}</td>
+                                <td style="padding:12px;">${statusBadge(b)}</td>
+                                <td style="padding:12px;">
+                                    <div style="display:flex;gap:6px;align-items:center;">
+                                        ${!b.is_paid ? `
+                                        <button onclick="App.pages.markPaid(${b.id})"
+                                            style="background:rgba(46,160,67,0.12);color:var(--success-color);border:1px solid rgba(46,160,67,0.3);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px;"
+                                            onmouseover="this.style.background='rgba(46,160,67,0.25)'" onmouseout="this.style.background='rgba(46,160,67,0.12)'">
+                                            <i class="ph ph-check"></i> Mark Paid
+                                        </button>
+                                        <button onclick="App.pages.deleteBill(${b.id})"
+                                            style="background:rgba(248,81,73,0.08);color:var(--danger-color);border:1px solid rgba(248,81,73,0.25);border-radius:6px;padding:5px 8px;font-size:12px;cursor:pointer;font-family:inherit;"
+                                            onmouseover="this.style.background='rgba(248,81,73,0.2)'" onmouseout="this.style.background='rgba(248,81,73,0.08)'" title="Delete bill">
+                                            <i class="ph ph-trash"></i>
+                                        </button>` : `
+                                        <button onclick="App.pages.downloadReceipt(${JSON.stringify(b).replace(/"/g,'&quot;')})"
+                                            style="background:rgba(88,166,255,0.1);color:var(--primary-color);border:1px solid rgba(88,166,255,0.25);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px;"
+                                            onmouseover="this.style.background='rgba(88,166,255,0.2)'" onmouseout="this.style.background='rgba(88,166,255,0.1)'">
+                                            <i class="ph ph-download-simple"></i> Receipt
+                                        </button>`}
+                                    </div>
+                                </td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+            } else {
+                // Resident: card layout
+                el.innerHTML = `<div class="grid-overview">${bills.map(b => `
+                <div class="card" style="border-top:4px solid ${b.is_paid ? 'var(--success-color)' : (new Date(b.due_date) < now ? 'var(--danger-color)' : 'var(--warning-color)')};">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+                        <div>
+                            <div style="color:white;font-weight:700;font-size:16px;">₹${parseFloat(b.amount).toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
+                            <div style="color:var(--text-secondary);font-size:12px;margin-top:2px;">${b.billing_period}</div>
+                        </div>
+                        ${statusBadge(b)}
+                    </div>
+                    ${b.description ? `<p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px;">${b.description}</p>` : ''}
+                    <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-secondary);border-top:1px solid var(--border-color);padding-top:12px;">
+                        <div style="display:flex;justify-content:space-between;"><span>Due Date</span><span style="color:var(--text-primary);">${fmtDate(b.due_date)}</span></div>
+                        ${b.is_paid ? `<div style="display:flex;justify-content:space-between;"><span>Paid On</span><span style="color:var(--success-color);">${fmtDate(b.paid_at)}</span></div>` : ''}
+                        <div style="display:flex;justify-content:space-between;"><span>Bill #</span><span style="color:var(--text-primary);">MB-${String(b.id).padStart(5,'0')}</span></div>
+                    </div>
+                    ${b.is_paid ? `
+                    <button onclick="App.pages.downloadReceipt(${JSON.stringify(b).replace(/"/g,'&quot;')})"
+                        class="btn btn-secondary" style="width:100%;justify-content:center;margin-top:14px;font-size:13px;">
+                        <i class="ph ph-download-simple"></i> Download Receipt
+                    </button>` : `
+                    <div style="margin-top:14px;padding:10px 14px;background:rgba(248,160,73,0.06);border:1px solid rgba(248,160,73,0.25);border-radius:8px;font-size:12px;color:var(--warning-color);text-align:center;">
+                        <i class="ph ph-info"></i> Please pay at the community office. Admin will mark it paid.
+                    </div>`}
+                </div>`).join('')}</div>`;
+            }
+        },
+
+        showCreateBillForm() {
+            const el = document.getElementById('bill-create-form');
+            if (!el) return;
+            if (el.innerHTML.trim()) { el.innerHTML = ''; return; }
+
+            const iS = `padding:10px;background:rgba(0,0,0,0.3);border:1px solid var(--border-color);border-radius:8px;color:white;font-family:inherit;font-size:13px;width:100%;box-sizing:border-box;`;
+
+            // Load residents for the multi-select
+            ApiClient.getUsers().then(users => {
+                const residents = users.filter(u => u.role === 'resident');
+                const residentOptions = residents.length
+                    ? residents.map(r => `<option value="${r.id}">${r.name} (${r.email})</option>`).join('')
+                    : '<option disabled>No residents found</option>';
+
+                // Get current month as default billing period
+                const now = new Date();
+                const defaultPeriod = now.toLocaleString('default', { month: 'long' }) + ' ' + now.getFullYear();
+                const defaultDue = new Date(now.getFullYear(), now.getMonth() + 1, 5).toISOString().slice(0,10);
+
+                el.innerHTML = `<div class="card" style="margin-bottom:24px;border:1px solid var(--primary-color);">
+                    <h3 style="color:white;margin-bottom:18px;display:flex;align-items:center;gap:8px;"><i class="ph ph-receipt" style="color:var(--primary-color);"></i> Create Maintenance Bill</h3>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                        <div style="grid-column:1/-1;">
+                            <label style="display:block;color:var(--text-secondary);font-size:12px;margin-bottom:6px;">Select Residents <span style="color:var(--text-secondary);font-size:11px;">(Ctrl+Click or Cmd+Click to select multiple)</span></label>
+                            <select id="bill-residents" multiple style="${iS}height:120px;">${residentOptions}</select>
+                            <div style="margin-top:6px;display:flex;gap:8px;">
+                                <button onclick="App.pages._billSelectAll()" style="background:rgba(88,166,255,0.1);color:var(--primary-color);border:1px solid rgba(88,166,255,0.25);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit;">Select All</button>
+                                <button onclick="App.pages._billDeselectAll()" style="background:rgba(255,255,255,0.05);color:var(--text-secondary);border:1px solid var(--border-color);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit;">Deselect All</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="display:block;color:var(--text-secondary);font-size:12px;margin-bottom:6px;">Billing Period</label>
+                            <input id="bill-period" value="${defaultPeriod}" placeholder="e.g. August 2026" style="${iS}">
+                        </div>
+                        <div>
+                            <label style="display:block;color:var(--text-secondary);font-size:12px;margin-bottom:6px;">Amount (₹)</label>
+                            <input id="bill-amount" type="number" min="1" placeholder="e.g. 2500" style="${iS}">
+                        </div>
+                        <div>
+                            <label style="display:block;color:var(--text-secondary);font-size:12px;margin-bottom:6px;">Due Date</label>
+                            <input id="bill-due" type="date" value="${defaultDue}" style="${iS}">
+                        </div>
+                        <div>
+                            <label style="display:block;color:var(--text-secondary);font-size:12px;margin-bottom:6px;">Description <span style="color:var(--text-secondary);font-size:11px;">(optional)</span></label>
+                            <input id="bill-desc" placeholder="e.g. Maintenance + Water charges" style="${iS}">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <button class="btn" id="bill-submit-btn" onclick="App.pages.submitCreateBill()"><i class="ph ph-paper-plane-tilt"></i> Create Bill(s)</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('bill-create-form').innerHTML=''">Cancel</button>
+                    </div>
+                </div>`;
+            }).catch(err => {
+                el.innerHTML = `<div class="card" style="color:var(--danger-color);">Failed to load residents: ${err.message}</div>`;
+            });
+        },
+
+        _billSelectAll() {
+            const sel = document.getElementById('bill-residents');
+            if (sel) Array.from(sel.options).forEach(o => o.selected = true);
+        },
+
+        _billDeselectAll() {
+            const sel = document.getElementById('bill-residents');
+            if (sel) Array.from(sel.options).forEach(o => o.selected = false);
+        },
+
+        async submitCreateBill() {
+            const sel    = document.getElementById('bill-residents');
+            const period = document.getElementById('bill-period')?.value.trim();
+            const amount = document.getElementById('bill-amount')?.value;
+            const due    = document.getElementById('bill-due')?.value;
+            const desc   = document.getElementById('bill-desc')?.value.trim();
+
+            const selectedIds = sel ? Array.from(sel.selectedOptions).map(o => parseInt(o.value)) : [];
+            if (!selectedIds.length) { showToast('Select at least one resident', 'error'); return; }
+            if (!period) { showToast('Enter a billing period', 'error'); return; }
+            if (!amount || parseFloat(amount) <= 0) { showToast('Enter a valid amount greater than ₹0', 'error'); return; }
+            if (!due) { showToast('Select a due date', 'error'); return; }
+
+            const btn = document.getElementById('bill-submit-btn');
+            btn.disabled = true; btn.innerHTML = '<i class="ph ph-circle-notch" style="animation:spin 1s linear infinite;"></i> Creating…';
+            try {
+                const dueISO = new Date(due + 'T23:59:59').toISOString();
+                await ApiClient.createMaintenanceBills(selectedIds, period, amount, desc || null, dueISO);
+                showToast(`Bill(s) created for ${selectedIds.length} resident${selectedIds.length > 1 ? 's' : ''}!`, 'success');
+                document.getElementById('bill-create-form').innerHTML = '';
+                await App.pages.loadBills(true);
+            } catch (err) {
+                showToast(err.message, 'error');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="ph ph-paper-plane-tilt"></i> Create Bill(s)';
+            }
+        },
+
+        async markPaid(billId) {
+            if (!confirm('Mark this bill as paid? This action cannot be undone.')) return;
+            try {
+                await ApiClient.markBillPaid(billId);
+                showToast('Bill marked as paid!', 'success');
+                await App.pages.loadBills(true);
+            } catch (err) { showToast(err.message, 'error'); }
+        },
+
+        async deleteBill(billId) {
+            if (!confirm('Delete this bill? This cannot be undone.')) return;
+            try {
+                await ApiClient.deleteMaintenanceBill(billId);
+                showToast('Bill deleted', 'success');
+                await App.pages.loadBills(true);
+            } catch (err) { showToast(err.message, 'error'); }
+        },
+
+        downloadReceipt(bill) {
+            // Parse if passed as a JSON string (from inline onclick attribute)
+            if (typeof bill === 'string') { try { bill = JSON.parse(bill); } catch { showToast('Receipt error', 'error'); return; } }
+
+            const fmtAmt  = (a) => `₹${parseFloat(a).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'long', year:'numeric' }) : '—';
+            const billNo  = `MB-${String(bill.id).padStart(5,'0')}`;
+            const communityName = App.user?.community_name || 'AJS Community';
+
+            const receiptHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Maintenance Receipt ${billNo}</title>
+<style>
+  @media print {
+    body * { visibility: hidden; }
+    #receipt-printable, #receipt-printable * { visibility: visible; }
+    #receipt-printable { position: fixed; top: 0; left: 0; width: 100%; }
+    .no-print { display: none !important; }
+  }
+  body { font-family: 'Inter', Arial, sans-serif; background: #f0f4f8; margin: 0; padding: 20px; color: #1a202c; }
+  #receipt-printable {
+    max-width: 600px; margin: 0 auto; background: #fff;
+    border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.12); overflow: hidden;
+  }
+  .receipt-header {
+    background: linear-gradient(135deg, #1a1f2e 0%, #2d3748 100%);
+    color: white; padding: 28px 32px; display: flex; align-items: center; gap: 16px;
+  }
+  .receipt-logo { font-size: 36px; }
+  .receipt-org { font-size: 20px; font-weight: 700; margin: 0; }
+  .receipt-subtitle { font-size: 13px; opacity: 0.7; margin: 2px 0 0; }
+  .receipt-body { padding: 28px 32px; }
+  .receipt-title { font-size: 22px; font-weight: 700; color: #2d3748; margin: 0 0 4px; }
+  .receipt-status { display: inline-block; background: #c6f6d5; color: #276749; padding: 3px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-bottom: 20px; }
+  .receipt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 20px; }
+  .receipt-field { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; }
+  .receipt-field:nth-last-child(-n+2) { border-bottom: none; }
+  .receipt-field label { font-size: 11px; font-weight: 700; color: #718096; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
+  .receipt-field span { font-size: 14px; color: #2d3748; font-weight: 500; }
+  .receipt-amount-box { background: #ebf4ff; border: 1px solid #bee3f8; border-radius: 8px; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .receipt-amount-label { font-size: 13px; color: #4a5568; font-weight: 500; }
+  .receipt-amount-value { font-size: 26px; font-weight: 800; color: #2b6cb0; }
+  .receipt-footer { border-top: 1px solid #e2e8f0; padding: 16px 32px; text-align: center; font-size: 12px; color: #a0aec0; }
+  .receipt-official { background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #276749; text-align: center; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div id="receipt-printable">
+  <div class="receipt-header">
+    <div class="receipt-logo">🏘️</div>
+    <div>
+      <p class="receipt-org">AJS Community</p>
+      <p class="receipt-subtitle">Official Maintenance Receipt</p>
+    </div>
+  </div>
+  <div class="receipt-body">
+    <div class="receipt-title">Maintenance Bill</div>
+    <div class="receipt-status">✓ PAID</div>
+    <div class="receipt-amount-box">
+      <span class="receipt-amount-label">Total Amount Paid</span>
+      <span class="receipt-amount-value">${fmtAmt(bill.amount)}</span>
+    </div>
+    <div class="receipt-grid">
+      <div class="receipt-field"><label>RECEIPT NO.</label><span>${billNo}</span></div>
+      <div class="receipt-field"><label>BILLING PERIOD</label><span>${bill.billing_period}</span></div>
+      <div class="receipt-field"><label>RESIDENT NAME</label><span>${bill.resident_name}</span></div>
+      <div class="receipt-field"><label>COMMUNITY</label><span>${communityName}</span></div>
+      <div class="receipt-field"><label>DUE DATE</label><span>${fmtDate(bill.due_date)}</span></div>
+      <div class="receipt-field"><label>DATE PAID</label><span>${fmtDate(bill.paid_at)}</span></div>
+      ${bill.description ? `<div class="receipt-field" style="grid-column:1/-1;"><label>DESCRIPTION</label><span>${bill.description}</span></div>` : ''}
+    </div>
+    <div class="receipt-official">
+      <strong>✅ This is an official payment receipt</strong><br>
+      Issued by AJS Community Management System
+    </div>
+  </div>
+  <div class="receipt-footer">
+    Generated on ${new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' })}
+    &nbsp;•&nbsp; AJS Community Portal
+  </div>
+</div>
+<div class="no-print" style="text-align:center;margin-top:20px;">
+  <button onclick="window.print()" style="padding:12px 28px;background:#2b6cb0;color:white;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600;">🖨️ Print / Save as PDF</button>
+  <button onclick="window.close()" style="margin-left:12px;padding:12px 20px;background:#e2e8f0;color:#2d3748;border:none;border-radius:8px;font-size:15px;cursor:pointer;">Close</button>
+</div>
+</body>
+</html>`;
+
+            const receiptWin = window.open('', '_blank', 'width=700,height=850,menubar=no,toolbar=no,location=no,status=no');
+            if (!receiptWin) { showToast('Please allow pop-ups to view receipts', 'error'); return; }
+            receiptWin.document.write(receiptHTML);
+            receiptWin.document.close();
         },
 
         // ── Super Admin: Community Management helpers (inside App.pages so onclick="App.pages.*" works) ──

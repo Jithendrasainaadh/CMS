@@ -119,4 +119,26 @@ class ApiClient {
             method: 'PUT', body: JSON.stringify({ user_id: userId, new_password: newPassword })
         });
     }
+
+    // Maintenance Bills
+    static async getMaintenanceBills() { return this.request('/maintenance/bills/'); }
+    static async getMyBills() { return this.request('/maintenance/my-bills/'); }
+    static async createMaintenanceBills(residentIds, billingPeriod, amount, description, dueDate) {
+        return this.request('/maintenance/bills/', {
+            method: 'POST',
+            body: JSON.stringify({
+                resident_ids: residentIds,
+                billing_period: billingPeriod,
+                amount: parseFloat(amount),
+                description: description || null,
+                due_date: dueDate
+            })
+        });
+    }
+    static async markBillPaid(billId) {
+        return this.request(`/maintenance/bills/${billId}/pay`, { method: 'PUT' });
+    }
+    static async deleteMaintenanceBill(billId) {
+        return this.request(`/maintenance/bills/${billId}`, { method: 'DELETE' });
+    }
 }

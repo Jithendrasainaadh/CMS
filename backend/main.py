@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import timedelta
+from datetime import timedelta, datetime
 import os
 
 from . import models, schemas, auth, database, notifications as notif_svc
@@ -229,6 +229,7 @@ def delete_community(community_id: int, token_data: dict = Depends(auth.get_curr
     db.execute(text("DELETE FROM polls WHERE community_id = :cid"), {"cid": community_id})
     db.execute(text("DELETE FROM messages WHERE community_id = :cid"), {"cid": community_id})
     db.execute(text("DELETE FROM properties WHERE community_id = :cid"), {"cid": community_id})
+    db.execute(text("DELETE FROM maintenance_bills WHERE community_id = :cid"), {"cid": community_id})
     db.execute(text("DELETE FROM notifications WHERE community_id = :cid"), {"cid": community_id})
     db.execute(text("DELETE FROM resident_permissions WHERE community_id = :cid"), {"cid": community_id})
     db.execute(text("DELETE FROM users WHERE community_id = :cid"), {"cid": community_id})
@@ -490,6 +491,150 @@ def delete_gallery_image(image_id: int, token_data: dict = Depends(auth.get_curr
     db.delete(img)
     db.commit()
     return {"message": "Image deleted"}
+
+
+
+# ── MAINTENANCE BILLS ──────────────────────────────────────────────────────────
+
+def _bill_out(bill: models.MaintenanceBill, db: Session) -> schemas.MaintenanceBillOut:
+    """Helper: build a MaintenanceBillOut from an ORM object."""
+    resident = db.query(models.User).filter(models.User.id == bill.resident_id).first()
+    return schemas.MaintenanceBillOut(
+        id=bill.id,
+        community_id=bill.community_id,
+        resident_id=bill.resident_id,
+        resident_name=resident.name if resident else "Unknown",
+        billing_period=bill.billing_period,
+        amount=bill.amount,
+        description=bill.description,
+        due_date=bill.due_date,
+        is_paid=bill.is_paid,
+        paid_at=bill.paid_at,
+        created_at=bill.created_at,
+    )
+
+
+@app.post("/api/maintenance/bills/", response_model=List[schemas.MaintenanceBillOut])
+def create_maintenance_bills(
+    payload: schemas.MaintenanceBillCreate,
+    token_data: dict = Depends(auth.get_current_user_token_data),
+    db: Session = Depends(get_db)
+):
+    """Admin creates one bill record per selected resident. Validates each
+    resident_id belongs to the same community and has the 'resident' role."""
+    if token_data["is_superadmin"] or token_data.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only community admins can create maintenance bills")
+    if not payload.resident_ids:
+        raise HTTPException(status_code=400, detail="At least one resident must be selected")
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be greater than zero")
+    if not payload.billing_period.strip():
+        raise HTTPException(status_code=400, detail="Billing period is required")
+
+    community_id = token_data["community_id"]
+    created_bills = []
+    for resident_id in payload.resident_ids:
+        # Verify the resident exists in this community
+        resident = db.query(models.User).filter(
+            models.User.id == resident_id,
+            models.User.community_id == community_id
+        ).first()
+        if not resident:
+            raise HTTPException(status_code=404, detail=f"Resident ID {resident_id} not found in your community")
+        bill = models.MaintenanceBill(
+            community_id=community_id,
+            resident_id=resident_id,
+            billing_period=payload.billing_period.strip(),
+            amount=payload.amount,
+            description=payload.description,
+            due_date=payload.due_date,
+        )
+        db.add(bill)
+        db.flush()  # get ID before commit
+        created_bills.append(bill)
+
+    db.commit()
+    return [_bill_out(b, db) for b in created_bills]
+
+
+@app.get("/api/maintenance/bills/", response_model=List[schemas.MaintenanceBillOut])
+def get_all_maintenance_bills(
+    token_data: dict = Depends(auth.get_current_user_token_data),
+    db: Session = Depends(get_db)
+):
+    """Admin: list all bills in their community, ordered newest first."""
+    if token_data["is_superadmin"] or token_data.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only community admins can view all bills")
+    bills = db.query(models.MaintenanceBill).filter(
+        models.MaintenanceBill.community_id == token_data["community_id"]
+    ).order_by(models.MaintenanceBill.created_at.desc()).all()
+    return [_bill_out(b, db) for b in bills]
+
+
+@app.get("/api/maintenance/my-bills/", response_model=List[schemas.MaintenanceBillOut])
+def get_my_bills(
+    token_data: dict = Depends(auth.get_current_user_token_data),
+    db: Session = Depends(get_db)
+):
+    """Resident: list only their own bills, ordered newest first."""
+    if token_data["is_superadmin"]:
+        raise HTTPException(status_code=403, detail="Super Admins do not have community bills")
+    if token_data.get("role") == "admin":
+        raise HTTPException(status_code=403, detail="Admins: use /api/maintenance/bills/ to view community bills")
+    user = db.query(models.User).filter(models.User.email == token_data["email"]).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    bills = db.query(models.MaintenanceBill).filter(
+        models.MaintenanceBill.resident_id == user.id,
+        models.MaintenanceBill.community_id == user.community_id   # belt-and-suspenders scope check
+    ).order_by(models.MaintenanceBill.created_at.desc()).all()
+    return [_bill_out(b, db) for b in bills]
+
+
+@app.put("/api/maintenance/bills/{bill_id}/pay", response_model=schemas.MaintenanceBillOut)
+def mark_bill_paid(
+    bill_id: int,
+    token_data: dict = Depends(auth.get_current_user_token_data),
+    db: Session = Depends(get_db)
+):
+    """Admin marks a bill as paid after verifying offline payment. Cannot un-pay."""
+    if token_data["is_superadmin"] or token_data.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only community admins can mark bills as paid")
+    bill = db.query(models.MaintenanceBill).filter(
+        models.MaintenanceBill.id == bill_id,
+        models.MaintenanceBill.community_id == token_data["community_id"]   # enforce community scope
+    ).first()
+    if not bill:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    if bill.is_paid:
+        raise HTTPException(status_code=400, detail="Bill is already marked as paid")
+    bill.is_paid = True
+    bill.paid_at = datetime.utcnow()
+    db.commit()
+    db.refresh(bill)
+    return _bill_out(bill, db)
+
+
+@app.delete("/api/maintenance/bills/{bill_id}")
+def delete_maintenance_bill(
+    bill_id: int,
+    token_data: dict = Depends(auth.get_current_user_token_data),
+    db: Session = Depends(get_db)
+):
+    """Admin deletes a bill (e.g. created by mistake). Only unpaid bills can be deleted."""
+    if token_data["is_superadmin"] or token_data.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only community admins can delete bills")
+    bill = db.query(models.MaintenanceBill).filter(
+        models.MaintenanceBill.id == bill_id,
+        models.MaintenanceBill.community_id == token_data["community_id"]
+    ).first()
+    if not bill:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    if bill.is_paid:
+        raise HTTPException(status_code=400, detail="Paid bills cannot be deleted")
+    db.delete(bill)
+    db.commit()
+    return {"message": "Bill deleted"}
 
 
 # ── SERVE FRONTEND (after all explicit routes) ─────────────────────────────────

@@ -172,3 +172,29 @@ class CommunityPublic(BaseModel):
 class SuperAdminUserPasswordUpdate(BaseModel):
     user_id: int
     new_password: str
+
+# ── Maintenance Bills ──────────────────────────────────────────────────────────
+
+class MaintenanceBillCreate(BaseModel):
+    """Sent by admin to create a bill. resident_ids is a list so admin can
+    raise the same bill for one or all residents in one request."""
+    resident_ids: List[int]         # one or more resident user IDs
+    billing_period: str             # e.g. "August 2026"
+    amount: float                   # ₹ amount
+    description: Optional[str] = None
+    due_date: datetime              # ISO datetime string from frontend
+
+class MaintenanceBillOut(BaseModel):
+    """Returned by the API for a single bill record."""
+    id: int
+    community_id: int
+    resident_id: int
+    resident_name: str              # joined from User.name
+    billing_period: str
+    amount: float
+    description: Optional[str] = None
+    due_date: datetime
+    is_paid: bool
+    paid_at: Optional[datetime] = None
+    created_at: datetime
+    model_config = {"from_attributes": True}

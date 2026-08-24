@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -23,6 +23,7 @@ class Community(Base):
     properties = relationship("Property", back_populates="community", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="community", cascade="all, delete-orphan")
     gallery_images = relationship("GalleryImage", back_populates="community", cascade="all, delete-orphan")
+    maintenance_bills = relationship("MaintenanceBill", back_populates="community", cascade="all, delete-orphan")
 
 class GalleryImage(Base):
     __tablename__ = "gallery_images"
@@ -47,6 +48,7 @@ class User(Base):
     properties = relationship("Property", back_populates="owner")
     permissions = relationship("ResidentPermission", back_populates="user", uselist=False, cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    maintenance_bills = relationship("MaintenanceBill", back_populates="resident", cascade="all, delete-orphan")
 
 class ResidentPermission(Base):
     """Stores per-resident permission flags for a community. High cohesion: ONLY permission data lives here."""
@@ -121,3 +123,20 @@ class Property(Base):
     status = Column(String)  # 'for_rent', 'for_sale', 'vacant'
     community = relationship("Community", back_populates="properties")
     owner = relationship("User", back_populates="properties")
+
+class MaintenanceBill(Base):
+    """Monthly maintenance bill raised by admin for one or more residents."""
+    __tablename__ = "maintenance_bills"
+    id = Column(Integer, primary_key=True, index=True)
+    community_id = Column(Integer, ForeignKey("communities.id"))
+    resident_id = Column(Integer, ForeignKey("users.id"))       # the resident this bill is for
+    billing_period = Column(String)                              # e.g. "August 2026"
+    amount = Column(Float)                                       # in ₹
+    description = Column(String, nullable=True)                  # e.g. "Maintenance + Water charges"
+    due_date = Column(DateTime)
+    is_paid = Column(Boolean, default=False)
+    paid_at = Column(DateTime, nullable=True)                    # set when admin marks paid
+    created_at = Column(DateTime, default=datetime.utcnow)
+    community = relationship("Community", back_populates="maintenance_bills")
+    resident = relationship("User", back_populates="maintenance_bills")
+
